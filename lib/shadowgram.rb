@@ -52,7 +52,7 @@ module Shadowgram
             if empty_trace?(trace_summary)
               skipped_count += 1
             else
-              summary_io.puts(JSON.dump(trace_summary.to_h))
+              summary_io.puts(JSON.dump(trace_summary.to_h.merge('region' => @xray_client.config.region)))
               trace_count += 1
               summary_batch << trace_summary
               if summary_batch.size == MAX_BATCH_SIZE
@@ -85,6 +85,7 @@ module Shadowgram
         trace.segments.each do |segment|
           document = JSON.load(segment.document)
           document['type'] = 'segment'
+          document['region'] = @xray_client.config.region
           if (subsegments = document.delete('subsegments'))
             document['subsegments'] = subsegments.map { |s| s['id'] }
             segment_count += process_subsegments(document['trace_id'], [document['id']], subsegments, segment_io)
@@ -103,6 +104,7 @@ module Shadowgram
         subsegment['parent_id'] = parent_ids.last
         subsegment['parent_ids'] = parent_ids
         subsegment['type'] = 'subsegment'
+        subsegment['region'] = @xray_client.config.region
         if (subsubsegments = subsegment.delete('subsegments'))
           subsegment['subsegments'] = subsubsegments.map { |s| s['id'] }
           subsegment_count += process_subsegments(trace_id, [*parent_ids, subsegment['id']], subsubsegments, segment_io)

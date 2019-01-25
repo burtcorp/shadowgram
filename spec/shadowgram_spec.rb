@@ -206,9 +206,18 @@ module Shadowgram
           'base/uri/summary/us-stubbed-1/2019/01/19/01/summary-2019011901.json.gz',
         )
         stored_object = stored_objects['base/uri/summary/us-stubbed-1/2019/01/19/02/summary-2019011902.json.gz']
-        expect(Zlib::GzipReader.new(File.open(stored_object.path)).each_line).to contain_exactly(
-          *trace_summaries[Time.utc(2019, 1, 19, 2)].map { |tc| JSON.dump(tc) + "\n" }
+        summaries = Zlib::GzipReader.new(File.open(stored_object.path)).each_line.map { |line| JSON.load(line) }
+        expect(summaries).to include(
+          hash_including('id' => '6'),
+          hash_including('id' => '7'),
         )
+      end
+
+      it 'adds a "region" property to the trace summaries' do
+        handler.collect_traces
+        stored_object = stored_objects['base/uri/summary/us-stubbed-1/2019/01/19/02/summary-2019011902.json.gz']
+        summaries = Zlib::GzipReader.new(File.open(stored_object.path)).each_line.map { |line| JSON.load(line) }
+        expect(summaries).to all(include('region' => 'us-stubbed-1'))
       end
 
       it 'stores all the trace segments for the same hour in a compressed JSON stream file' do
@@ -228,10 +237,23 @@ module Shadowgram
         stored_object = stored_objects['base/uri/segment/us-stubbed-1/2019/01/19/02/segment-2019011902.json.gz']
         segments = Zlib::GzipReader.new(File.open(stored_object.path)).each_line.map { |line| JSON.load(line) }
         expect(segments).to contain_exactly(
-          {'id' => 'g', 'type' => 'segment', 'trace_id' => '6'},
-          {'id' => 'h', 'type' => 'segment', 'trace_id' => '7'},
-          {'id' => 'i', 'type' => 'segment', 'trace_id' => '7'},
-          {'id' => 'j', 'type' => 'segment', 'trace_id' => '7'},
+          hash_including('id' => 'g', 'type' => 'segment'),
+          hash_including('id' => 'h', 'type' => 'segment'),
+          hash_including('id' => 'i', 'type' => 'segment'),
+          hash_including('id' => 'j', 'type' => 'segment'),
+        )
+      end
+
+      it 'adds a "region" property to the trace segments' do
+        handler.collect_traces
+        handler.collect_traces
+        stored_object = stored_objects['base/uri/segment/us-stubbed-1/2019/01/19/02/segment-2019011902.json.gz']
+        segments = Zlib::GzipReader.new(File.open(stored_object.path)).each_line.map { |line| JSON.load(line) }
+        expect(segments).to contain_exactly(
+          hash_including('id' => 'g', 'region' => 'us-stubbed-1'),
+          hash_including('id' => 'h', 'region' => 'us-stubbed-1'),
+          hash_including('id' => 'i', 'region' => 'us-stubbed-1'),
+          hash_including('id' => 'j', 'region' => 'us-stubbed-1'),
         )
       end
 
@@ -263,12 +285,9 @@ module Shadowgram
 
         it 'skips the trace summary' do
           handler.collect_traces
-          expected_summaries = trace_summaries[Time.utc(2019, 1, 19, 2)]
-          expected_summaries.pop
           stored_object = stored_objects['base/uri/summary/us-stubbed-1/2019/01/19/02/summary-2019011902.json.gz']
-          expect(Zlib::GzipReader.new(File.open(stored_object.path)).each_line).to contain_exactly(
-            *expected_summaries.map { |tc| JSON.dump(tc) + "\n" }
-          )
+          summaries = Zlib::GzipReader.new(File.open(stored_object.path)).each_line.map { |line| JSON.load(line) }
+          expect(summaries).to_not include(hash_including('id' => '6b'))
           expect(xray_client).to_not have_received(:batch_get_traces).with(trace_ids: include('6b'))
         end
 
@@ -356,17 +375,17 @@ module Shadowgram
           it 'stores the subsegments of the subsegments as their own entries and adds parent IDs' do
             handler.collect_traces
             expect(stored_segments).to contain_exactly(
-              {'id' => 'g', 'subsegments' => %w[g1 g2], 'type' => 'segment', 'trace_id' => '6'},
-              {'id' => 'g1', 'parent_id' => 'g', 'parent_ids' => %w[g], 'subsegments' => %w[g1a g1b], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'g1a', 'parent_id' => 'g1', 'parent_ids' => %w[g g1], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'g1b', 'parent_id' => 'g1', 'parent_ids' => %w[g g1], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'g2', 'parent_id' => 'g', 'parent_ids' => %w[g], 'subsegments' => %w[g2a g2b g2c], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'g2a', 'parent_id' => 'g2', 'parent_ids' => %w[g g2], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'g2b', 'parent_id' => 'g2', 'parent_ids' => %w[g g2], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'g2c', 'parent_id' => 'g2', 'parent_ids' => %w[g g2], 'type' => 'subsegment', 'trace_id' => '6'},
-              {'id' => 'h', 'type' => 'segment', 'trace_id' => '7'},
-              {'id' => 'i', 'type' => 'segment', 'trace_id' => '7'},
-              {'id' => 'j', 'type' => 'segment', 'trace_id' => '7'},
+              hash_including('id' => 'g', 'subsegments' => %w[g1 g2], 'type' => 'segment', 'trace_id' => '6'),
+              hash_including('id' => 'g1', 'parent_id' => 'g', 'parent_ids' => %w[g], 'subsegments' => %w[g1a g1b], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'g1a', 'parent_id' => 'g1', 'parent_ids' => %w[g g1], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'g1b', 'parent_id' => 'g1', 'parent_ids' => %w[g g1], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'g2', 'parent_id' => 'g', 'parent_ids' => %w[g], 'subsegments' => %w[g2a g2b g2c], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'g2a', 'parent_id' => 'g2', 'parent_ids' => %w[g g2], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'g2b', 'parent_id' => 'g2', 'parent_ids' => %w[g g2], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'g2c', 'parent_id' => 'g2', 'parent_ids' => %w[g g2], 'type' => 'subsegment', 'trace_id' => '6'),
+              hash_including('id' => 'h', 'type' => 'segment', 'trace_id' => '7'),
+              hash_including('id' => 'i', 'type' => 'segment', 'trace_id' => '7'),
+              hash_including('id' => 'j', 'type' => 'segment', 'trace_id' => '7'),
             )
           end
 
@@ -395,17 +414,17 @@ module Shadowgram
             it 'stores all levels as their own entries and adds parent IDs' do
               handler.collect_traces
               expect(stored_segments).to contain_exactly(
-                {'id' => 'g', 'subsegments' => %w[g1], 'type' => 'segment', 'trace_id' => '6'},
-                {'id' => 'g1', 'parent_id' => 'g', 'parent_ids' => %w[g], 'subsegments' => %w[g1a], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'g1a', 'parent_id' => 'g1', 'parent_ids' => %w[g g1], 'subsegments' => %w[g1a1], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'g1a1', 'parent_id' => 'g1a', 'parent_ids' => %w[g g1 g1a], 'subsegments' => %w[g1a1a], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'g1a1a', 'parent_id' => 'g1a1', 'parent_ids' => %w[g g1 g1a g1a1], 'subsegments' => %w[g1a1a1], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'g1a1a1', 'parent_id' => 'g1a1a', 'parent_ids' => %w[g g1 g1a g1a1 g1a1a], 'subsegments' => %w[g1a1a1a g1a1a1b], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'g1a1a1a', 'parent_id' => 'g1a1a1', 'parent_ids' => %w[g g1 g1a g1a1 g1a1a g1a1a1], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'g1a1a1b', 'parent_id' => 'g1a1a1', 'parent_ids' => %w[g g1 g1a g1a1 g1a1a g1a1a1], 'type' => 'subsegment', 'trace_id' => '6'},
-                {'id' => 'h', 'type' => 'segment', 'trace_id' => '7'},
-                {'id' => 'i', 'type' => 'segment', 'trace_id' => '7'},
-                {'id' => 'j', 'type' => 'segment', 'trace_id' => '7'},
+                hash_including('id' => 'g', 'subsegments' => %w[g1], 'type' => 'segment', 'trace_id' => '6'),
+                hash_including('id' => 'g1', 'parent_id' => 'g', 'parent_ids' => %w[g], 'subsegments' => %w[g1a], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'g1a', 'parent_id' => 'g1', 'parent_ids' => %w[g g1], 'subsegments' => %w[g1a1], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'g1a1', 'parent_id' => 'g1a', 'parent_ids' => %w[g g1 g1a], 'subsegments' => %w[g1a1a], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'g1a1a', 'parent_id' => 'g1a1', 'parent_ids' => %w[g g1 g1a g1a1], 'subsegments' => %w[g1a1a1], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'g1a1a1', 'parent_id' => 'g1a1a', 'parent_ids' => %w[g g1 g1a g1a1 g1a1a], 'subsegments' => %w[g1a1a1a g1a1a1b], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'g1a1a1a', 'parent_id' => 'g1a1a1', 'parent_ids' => %w[g g1 g1a g1a1 g1a1a g1a1a1], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'g1a1a1b', 'parent_id' => 'g1a1a1', 'parent_ids' => %w[g g1 g1a g1a1 g1a1a g1a1a1], 'type' => 'subsegment', 'trace_id' => '6'),
+                hash_including('id' => 'h', 'type' => 'segment', 'trace_id' => '7'),
+                hash_including('id' => 'i', 'type' => 'segment', 'trace_id' => '7'),
+                hash_including('id' => 'j', 'type' => 'segment', 'trace_id' => '7'),
               )
             end
           end
